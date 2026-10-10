@@ -1,0 +1,566 @@
+@model BanglaNumberPuzzle.Controllers.GameViewModel
+@{
+    ViewData["Title"] = "বাংলা সংখ্যা পাজল";
+    Layout = null;
+    var levelLabels = new Dictionary<int, string>
+    {
+        [10] = "১–১০",
+        [50] = "১–৫০",
+        [100] = "১–১০০"
+    };
+    // Bigger tiles for the small board, smaller for the 10-column boards
+    int maxTile = Model.Cols <= 4 ? 80 : 56;
+    double fontScale = Model.Level == 100 ? 0.36 : 0.42;
+}
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>বাংলা সংখ্যা পাজল</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #0d2137 0%, #1a3a5c 50%, #0d3b2e 100%);
+            font-family: 'Segoe UI', sans-serif;
+            color: #fff;
+            padding: 20px 16px;
+        }
+
+        h1 {
+            font-size: clamp(1.3rem, 6vw, 1.8rem);
+            margin-bottom: 6px;
+            letter-spacing: 2px;
+            color: #4fc3f7;
+            text-shadow: 0 2px 8px rgba(79,195,247,.4);
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: #aac;
+            margin-bottom: 14px;
+        }
+
+        .levels {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .levels a {
+            color: #ffcc80;
+            text-decoration: none;
+            padding: 6px 16px;
+            border: 1px solid #ffb74d;
+            border-radius: 20px;
+            font-weight: 700;
+            transition: background .2s, color .2s;
+        }
+
+        .levels a:hover,
+        .levels a.active {
+            background: #ffb74d;
+            color: #000;
+        }
+
+        .board {
+            /* tile shrinks to fit narrow screens: 16px page gutter + 12px board padding per side, plus scrollbar room */
+            --tile: min(var(--max-tile), calc((100vw - 72px - (var(--cols) - 1) * var(--gap)) / var(--cols)));
+            display: grid;
+            grid-template-columns: repeat(var(--cols), var(--tile));
+            grid-template-rows: repeat(var(--rows), var(--tile));
+            gap: var(--gap);
+            background: rgba(255,255,255,0.06);
+            padding: 12px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,.5);
+        }
+
+        .tile {
+            width: var(--tile);
+            height: var(--tile);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: calc(var(--tile) * var(--font-scale));
+            font-weight: 700;
+            border-radius: 10px;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            overflow: hidden;
+            transition: transform .12s ease, box-shadow .12s ease, background .2s;
+            background: linear-gradient(145deg, #1565c0, #0d47a1);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.2);
+        }
+
+        .tile:hover {
+            transform: scale(1.06);
+            box-shadow: 0 6px 18px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.25);
+        }
+
+        .tile.empty {
+            background: rgba(255,255,255,0.04);
+            box-shadow: inset 0 2px 8px rgba(0,0,0,.4);
+            cursor: pointer;
+        }
+
+        .tile.empty.has-neighbour:hover {
+            background: rgba(255,255,255,0.12);
+            box-shadow: inset 0 2px 8px rgba(0,0,0,.4), 0 0 10px rgba(79,195,247,.4);
+        }
+
+        .tile.empty.selected {
+            background: rgba(79,195,247,0.25);
+            box-shadow: 0 0 0 3px #4fc3f7, inset 0 2px 8px rgba(0,0,0,.3);
+            animation: blinkSelected 1s infinite;
+        }
+
+        @@keyframes blinkSelected {
+            0%, 100% { box-shadow: 0 0 0 3px #4fc3f7, inset 0 2px 8px rgba(0,0,0,.3); }
+            50%       { box-shadow: 0 0 0 3px rgba(79,195,247,.3), inset 0 2px 8px rgba(0,0,0,.3); }
+        }
+
+        .tile.can-move-to-selected {
+            background: linear-gradient(145deg, #f57c00, #e65100) !important;
+            animation: pulseOrange 1.2s infinite !important;
+        }
+
+        @@keyframes pulseOrange {
+            0%, 100% { box-shadow: 0 4px 12px rgba(245,124,0,.4), inset 0 1px 0 rgba(255,255,255,.2); }
+            50%       { box-shadow: 0 4px 22px rgba(245,124,0,.8), inset 0 1px 0 rgba(255,255,255,.3); }
+        }
+
+        .tile.movable {
+            background: linear-gradient(145deg, #00897b, #00695c);
+            animation: pulse 1.4s infinite;
+        }
+
+        @@keyframes pulse {
+            0%, 100% { box-shadow: 0 4px 12px rgba(0,137,123,.4), inset 0 1px 0 rgba(255,255,255,.2); }
+            50%       { box-shadow: 0 4px 22px rgba(0,137,123,.8), inset 0 1px 0 rgba(255,255,255,.3); }
+        }
+
+        .tile.solved-pos {
+            background: linear-gradient(145deg, #2e7d32, #1b5e20);
+        }
+
+        .tile.speaking::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 10px;
+            background: radial-gradient(circle, rgba(255,255,255,0.55) 0%, transparent 70%);
+            animation: ripple .55s ease-out forwards;
+        }
+
+        @@keyframes ripple {
+            0%   { opacity: 1; transform: scale(0.4); }
+            100% { opacity: 0; transform: scale(1.6); }
+        }
+
+        .tile .wave-icon {
+            display: none;
+            position: absolute;
+            bottom: 4px;
+            right: 5px;
+            font-size: 0.65rem;
+            opacity: 0.85;
+            animation: waveBob .4s ease-in-out infinite alternate;
+        }
+
+        .tile.speaking .wave-icon { display: block; }
+
+        @@keyframes waveBob {
+            from { transform: scaleY(1); }
+            to   { transform: scaleY(1.5); }
+        }
+
+        .word {
+            margin-top: 10px;
+            font-size: 1.4rem;
+            font-weight: 700;
+            min-height: 34px;
+            color: #ffcc80;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        button {
+            padding: 10px 22px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform .1s, box-shadow .1s;
+        }
+
+        #btnNew {
+            background: #e53935;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(229,57,53,.4);
+        }
+        #btnNew:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(229,57,53,.5); }
+
+        #btnHint {
+            background: #7b1fa2;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(123,31,162,.4);
+        }
+        #btnHint:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(123,31,162,.5); }
+
+        #btnMute {
+            background: #00796b;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(0,121,107,.4);
+            min-width: 52px;
+        }
+        #btnMute:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,121,107,.5); }
+        #btnMute.muted { background: #455a64; box-shadow: 0 4px 12px rgba(69,90,100,.4); }
+
+        .message {
+            margin-top: 16px;
+            font-size: 1.3rem;
+            font-weight: 700;
+            min-height: 34px;
+            color: #69ff69;
+            text-shadow: 0 0 12px rgba(100,255,100,.6);
+        }
+
+        .hint-panel {
+            margin-top: 14px;
+            background: rgba(255,255,255,0.08);
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-size: 1rem;
+            color: #ddd;
+            display: none;
+            max-width: min(560px, calc(100vw - 32px));
+            text-align: center;
+            line-height: 2;
+        }
+        .hint-panel.show { display: block; }
+
+        .status-row {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: #99aacc;
+        }
+
+        #voiceStatus {
+            font-size: 0.75rem;
+            color: #667;
+            font-style: italic;
+        }
+
+        .keyboard-hint {
+            font-size: 0.75rem;
+            color: #556;
+            margin-top: 6px;
+        }
+
+        .version-links {
+            margin-top: 14px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            font-size: 0.9rem;
+            padding: 0 16px;
+        }
+
+        .version-links a {
+            color: #4fc3f7;
+            text-decoration: none;
+            padding: 6px 14px;
+            border: 1px solid #4fc3f7;
+            border-radius: 20px;
+            transition: background .2s, color .2s;
+        }
+
+        .version-links a:hover {
+            background: #4fc3f7;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <h1>বাংলা সংখ্যা পাজল</h1>
+    <p class="subtitle">Bangla Number Sliding Puzzle — @Model.Cols×@Model.Rows</p>
+
+    <nav class="levels">
+        @foreach (var kv in levelLabels)
+        {
+            <a href="?level=@kv.Key" class="@(kv.Key == Model.Level ? "active" : "")">@kv.Value</a>
+        }
+    </nav>
+
+    <div class="board" id="board"
+         style="--cols:@Model.Cols; --rows:@Model.Rows; --gap:@(Model.Cols > 4 ? 5 : 6)px; --max-tile:@(maxTile)px; --font-scale:@fontScale.ToString(System.Globalization.CultureInfo.InvariantCulture);"></div>
+
+    <div class="word" id="word"></div>
+
+    <div class="status-row">
+        <span>Moves: <strong id="moveCount">0</strong></span>
+        <span id="voiceStatus">Loading voice…</span>
+    </div>
+
+    <div class="controls">
+        <button id="btnNew">New Game</button>
+        <button id="btnHint">Hint</button>
+        <button id="btnMute" title="Toggle sound">🔊</button>
+    </div>
+
+    <div class="message" id="message"></div>
+
+    <div class="hint-panel" id="hintPanel">
+        Goal order:<br>
+        <strong>@string.Join(" ", Model.Numerals.Skip(1))</strong>
+    </div>
+
+    <p class="keyboard-hint">Click a number to hear it, or use arrow keys &nbsp;|&nbsp; 🔊 = sound on/off</p>
+    <div class="version-links">
+        <a href="https://banglaclass.ca/consonant/">ব্যঞ্জনবর্ণ পাজল (Consonant Puzzle)</a>
+        <a href="https://banglaclass.ca/vowel/">স্বরবর্ণ পাজল (Vowel Puzzle)</a>
+        <a href="https://banglaclass.ca/vowel_easy/">স্বরবর্ণ পাজল — সহজ (Vowel Easy)</a>
+    </div>
+
+    <script>
+        const LEVEL = @Model.Level;
+        const ROWS = @Model.Rows, COLS = @Model.Cols;
+        const EMPTY = 0;
+        const solved = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.SolvedBoard));
+        // numerals[n] / words[n] give the Bangla digit string and spoken word for n
+        const numerals = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Numerals));
+        const words = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Words));
+
+        let board = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Board));
+        let moves = 0;
+        let muted = false;
+        let currentAudio = null;
+        let selectedBlank = null;
+        let celebrationPlayed = false;
+
+        document.getElementById('voiceStatus').textContent = '🎙 Bengali (Google TTS)';
+        document.getElementById('voiceStatus').style.color = '#66cc88';
+
+        function speakNumber(n) {
+            if (!n) return;
+            document.getElementById('word').textContent = numerals[n] + ' — ' + words[n];
+            speakText(words[n]);
+        }
+
+        function speakText(text) {
+            if (muted || !text) return;
+            if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+            const url = '/number/Tts?text=' + encodeURIComponent(text);
+            currentAudio = new Audio(url);
+            currentAudio.play().catch(() => {});
+        }
+
+        function flashSpeaking(div) {
+            div.classList.remove('speaking');
+            void div.offsetWidth; // restart the animation
+            div.classList.add('speaking');
+            setTimeout(() => div.classList.remove('speaking'), 600);
+        }
+
+        function getNeighbours(idx) {
+            const r = Math.floor(idx / COLS), c = idx % COLS;
+            return [
+                [r-1,c],[r+1,c],[r,c-1],[r,c+1]
+            ].filter(([nr,nc]) => nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS)
+             .map(([nr,nc]) => nr * COLS + nc);
+        }
+
+        function render(speakIdx) {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+
+            board.forEach((tile, idx) => {
+                const div = document.createElement('div');
+                div.className = 'tile' + (tile === EMPTY ? ' empty' : '');
+                div.dataset.idx = idx;
+
+                if (tile !== EMPTY) {
+                    const wave = document.createElement('span');
+                    wave.className = 'wave-icon';
+                    wave.textContent = '🔊';
+
+                    const label = document.createElement('span');
+                    label.textContent = numerals[tile];
+
+                    div.appendChild(label);
+                    div.appendChild(wave);
+
+                    const adjacentBlanks = getNeighbours(idx).filter(ni => board[ni] === EMPTY);
+                    const isMovable = adjacentBlanks.length > 0;
+                    if (isMovable) div.classList.add('movable');
+
+                    // highlight numbers that can move into the selected blank
+                    if (selectedBlank !== null && adjacentBlanks.includes(selectedBlank))
+                        div.classList.add('can-move-to-selected');
+
+                    if (idx === tile - 1) div.classList.add('solved-pos');
+
+                    if (speakIdx === idx) flashSpeaking(div);
+
+                    div.addEventListener('click', () => {
+                        if (selectedBlank !== null && adjacentBlanks.includes(selectedBlank)) {
+                            // a blank is selected — move this number there
+                            const target = selectedBlank;
+                            selectedBlank = null;
+                            tryMove(idx, target);
+                        } else if (selectedBlank === null && adjacentBlanks.length === 1) {
+                            // no blank selected — move if only 1 adjacent blank
+                            tryMove(idx, adjacentBlanks[0]);
+                        } else {
+                            // can't move: just say the number (and drop any blank selection)
+                            if (selectedBlank !== null) { selectedBlank = null; render(); }
+                            speakNumber(tile);
+                            flashSpeaking(boardEl.children[idx]);
+                        }
+                    });
+                } else {
+                    // blank tile
+                    const adjacentTiles = getNeighbours(idx).filter(ni => board[ni] !== EMPTY);
+                    if (adjacentTiles.length > 0) {
+                        div.classList.add('has-neighbour');
+                        if (selectedBlank === idx) div.classList.add('selected');
+
+                        div.addEventListener('click', () => {
+                            selectedBlank = selectedBlank === idx ? null : idx;
+                            render();
+                        });
+                    }
+                }
+
+                boardEl.appendChild(div);
+            });
+
+            document.getElementById('moveCount').textContent = moves;
+
+            const isSolved = board.every((t, i) => t === solved[i]);
+            document.getElementById('message').textContent =
+                isSolved ? '🎉 Solved! ঠিক হয়েছে! 🎉' : '';
+
+            if (isSolved && !celebrationPlayed) {
+                celebrationPlayed = true;
+                speakText('ঠিক হয়েছে');
+                playCelebration();
+            }
+        }
+
+        function playCelebration() {
+            if (muted) return;
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            const ctx = new AC();
+            const notes = [
+                [0.00, 523.25, 0.14], [0.14, 659.25, 0.14], [0.28, 783.99, 0.14],
+                [0.42, 1046.5, 0.40], [0.82, 783.99, 0.14], [0.96, 1046.5, 0.70],
+            ];
+            notes.forEach(([t, f, d]) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = 'triangle'; osc.frequency.value = f;
+                const s = ctx.currentTime + t;
+                gain.gain.setValueAtTime(0, s);
+                gain.gain.linearRampToValueAtTime(0.25, s + 0.02);
+                gain.gain.setValueAtTime(0.25, s + d - 0.05);
+                gain.gain.linearRampToValueAtTime(0, s + d);
+                osc.start(s); osc.stop(s + d + 0.01);
+            });
+            setTimeout(() => ctx.close(), 3000);
+        }
+
+        function tryMove(tileIdx, blankIdx) {
+            const number = board[tileIdx];
+            speakNumber(number);
+
+            fetch('/number/Game/Move', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ level: LEVEL, tileIndex: tileIdx, blankIndex: blankIdx ?? -1 })
+            })
+            .then(r => r.json())
+            .then(data => {
+                board = data.board;
+                const newIdx = board.indexOf(number);
+                if (newIdx !== tileIdx) moves++;
+                render(newIdx);
+            });
+        }
+
+        document.getElementById('btnNew').addEventListener('click', () => {
+            fetch('/number/Game/NewGame?level=' + LEVEL, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    board = data.board;
+                    moves = 0;
+                    selectedBlank = null;
+                    celebrationPlayed = false;
+                    document.getElementById('hintPanel').classList.remove('show');
+                    document.getElementById('message').textContent = '';
+                    document.getElementById('word').textContent = '';
+                    render();
+                });
+        });
+
+        document.getElementById('btnHint').addEventListener('click', () => {
+            document.getElementById('hintPanel').classList.toggle('show');
+        });
+
+        document.getElementById('btnMute').addEventListener('click', () => {
+            muted = !muted;
+            const btn = document.getElementById('btnMute');
+            btn.textContent = muted ? '🔇' : '🔊';
+            btn.classList.toggle('muted', muted);
+            if (muted && currentAudio) { currentAudio.pause(); currentAudio = null; }
+        });
+
+        document.addEventListener('keydown', e => {
+            const emptyIdxes = board.map((t,i) => t === EMPTY ? i : -1).filter(i => i !== -1);
+            let targetIdx = -1, targetBlank = -1;
+
+            // Find a tile adjacent to any blank in the arrow direction
+            emptyIdxes.forEach(emptyIdx => {
+                const er = Math.floor(emptyIdx / COLS), ec = emptyIdx % COLS;
+                let tr = er, tc = ec;
+                if (e.key === 'ArrowUp'    && er < ROWS - 1) tr = er + 1;
+                else if (e.key === 'ArrowDown'  && er > 0)   tr = er - 1;
+                else if (e.key === 'ArrowLeft'  && ec < COLS - 1) tc = ec + 1;
+                else if (e.key === 'ArrowRight' && ec > 0)   tc = ec - 1;
+                else return;
+                const ti = tr * COLS + tc;
+                if (board[ti] !== EMPTY) { targetIdx = ti; targetBlank = emptyIdx; }
+            });
+
+            if (targetIdx !== -1) {
+                e.preventDefault();
+                tryMove(targetIdx, targetBlank);
+            }
+        });
+
+        render();
+    </script>
+</body>
+</html>
